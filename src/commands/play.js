@@ -2,8 +2,7 @@ const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@disco
 const yts = require('yt-search');
 const GuildQueue = require('../GuildQueue');
 const spotify = require('../spotify');
-
-const BOT_PRIORITY = parseInt(process.env.BOT_PRIORITY || '1');
+const { hasPriorityToPlay } = require('../priority');
 
 // Detecta si es URL de YouTube
 function isYouTubeURL(str) {
@@ -34,21 +33,7 @@ module.exports = {
     }
 
     // ── Lógica de prioridad ──────────────────────────────────────────────────
-    // Verifica cuántos bots hay en el canal de voz del usuario (visible para ambos bots)
-    const botsInChannel = voiceChannel.members.filter(m => m.user.bot);
-
-    if (BOT_PRIORITY === 1) {
-      // Bot 1: si ya está activo en algún canal de este servidor, solo atiende
-      // a usuarios de ESE canal. Si el usuario está en otro canal, ignora
-      // silenciosamente para que Bot 2 lo tome.
-      const existingQueue = client.queues.get(message.guild.id);
-      if (existingQueue && existingQueue.voiceChannel.id !== voiceChannel.id) return;
-
-    } else {
-      // Bot 2: si ya hay algún bot en el canal del usuario, no entrar.
-      // Significa que Bot 1 ya está ahí o se está uniendo.
-      if (botsInChannel.size > 0) return;
-    }
+    if (!(await hasPriorityToPlay(message, client))) return;
     // ────────────────────────────────────────────────────────────────────────
 
     const query = args.join(' ');

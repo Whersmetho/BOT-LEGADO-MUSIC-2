@@ -1,13 +1,19 @@
 const { EmbedBuilder } = require('discord.js');
+const { isBotActiveInGuild } = require('../priority');
+
 function extractID(url) {
   const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : '';
 }
+
 module.exports = {
   name: 'nowplaying',
   aliases: ['np'],
   description: 'Muestra la canción actual',
   async execute(message, args, client) {
+    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    if (!isBotActiveInGuild(client, message.guild)) return;
+
     const queue = client.queues.get(message.guild.id);
     const song = queue?.getNowPlaying();
     if (!song) {

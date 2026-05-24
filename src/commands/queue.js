@@ -1,13 +1,19 @@
 const { EmbedBuilder } = require('discord.js');
+const { isBotActiveInGuild } = require('../priority');
+
 function extractID(url) {
   const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : '';
 }
+
 module.exports = {
   name: 'queue',
   aliases: ['q'],
   description: 'Muestra la cola de canciones',
   async execute(message, args, client) {
+    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    if (!isBotActiveInGuild(client, message.guild)) return;
+
     const queue = client.queues.get(message.guild.id);
     if (!queue || queue.songs.length === 0) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('📭 **La cola está vacía.**')] });

@@ -1,11 +1,15 @@
 const { EmbedBuilder } = require('discord.js');
 const { canStop } = require('../permissions');
+const { isBotActiveInGuild } = require('../priority');
 
 module.exports = {
   name: 'leave',
   aliases: ['dc', 'disconnect'],
   description: 'Desconecta el bot del canal de voz',
   async execute(message, args, client) {
+    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    if (!isBotActiveInGuild(client, message.guild)) return;
+
     const queue = client.queues.get(message.guild.id);
 
     if (queue) {
