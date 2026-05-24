@@ -2,7 +2,7 @@ const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@disco
 const yts = require('yt-search');
 const GuildQueue = require('../GuildQueue');
 const spotify = require('../spotify');
-const { hasPriorityToPlay } = require('../priority');
+const { hasPriorityToPlay } = require('./priority');
 
 // Detecta si es URL de YouTube
 function isYouTubeURL(str) {

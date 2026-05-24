@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { canStop } = require('../permissions');
-const { isBotActiveInGuild } = require('../priority');
+const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'leave',

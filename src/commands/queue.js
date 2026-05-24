@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { isBotActiveInGuild } = require('../priority');
+const { isBotActiveInGuild } = require('./priority');
 
 function extractID(url) {
   const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
