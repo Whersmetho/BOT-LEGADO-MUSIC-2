@@ -33,20 +33,21 @@ module.exports = {
       return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
     }
 
-    const existingQueue = client.queues.get(message.guild.id);
-
     // ── Lógica de prioridad ──────────────────────────────────────────────────
+    // Verifica cuántos bots hay en el canal de voz del usuario (visible para ambos bots)
+    const botsInChannel = voiceChannel.members.filter(m => m.user.bot);
+
     if (BOT_PRIORITY === 1) {
-      // Bot 1: si ya está activo en un canal, solo atiende a usuarios de ESE canal.
-      // Si el usuario está en otro canal, ignora silenciosamente para que Bot 2 lo tome.
-      if (existingQueue) {
-        if (voiceChannel.id !== existingQueue.voiceChannel.id) return;
-      }
+      // Bot 1: si ya está activo en algún canal de este servidor, solo atiende
+      // a usuarios de ESE canal. Si el usuario está en otro canal, ignora
+      // silenciosamente para que Bot 2 lo tome.
+      const existingQueue = client.queues.get(message.guild.id);
+      if (existingQueue && existingQueue.voiceChannel.id !== voiceChannel.id) return;
+
     } else {
-      // Bot 2: solo actúa si el canal del usuario YA está siendo atendido por Bot 1
-      // (es decir, hay una cola activa para ese canal de voz).
-      // Si no hay cola activa, o la cola activa es de un canal diferente, Bot 2 actúa.
-      if (existingQueue && existingQueue.voiceChannel.id === voiceChannel.id) return;
+      // Bot 2: si ya hay algún bot en el canal del usuario, no entrar.
+      // Significa que Bot 1 ya está ahí o se está uniendo.
+      if (botsInChannel.size > 0) return;
     }
     // ────────────────────────────────────────────────────────────────────────
 
