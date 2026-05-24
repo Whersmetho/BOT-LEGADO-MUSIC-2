@@ -3,6 +3,8 @@ const yts = require('yt-search');
 const GuildQueue = require('../GuildQueue');
 const spotify = require('../spotify');
 
+const BOT_PRIORITY = parseInt(process.env.BOT_PRIORITY || '1');
+
 // Detecta si es URL de YouTube
 function isYouTubeURL(str) {
   return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/.test(str);
@@ -30,6 +32,23 @@ module.exports = {
     if (!permissions.has('Connect') || !permissions.has('Speak')) {
       return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
     }
+
+    const existingQueue = client.queues.get(message.guild.id);
+
+    // ── Lógica de prioridad ──────────────────────────────────────────────────
+    if (BOT_PRIORITY === 1) {
+      // Bot 1: si ya está activo en un canal, solo atiende a usuarios de ESE canal.
+      // Si el usuario está en otro canal, ignora silenciosamente para que Bot 2 lo tome.
+      if (existingQueue) {
+        if (voiceChannel.id !== existingQueue.voiceChannel.id) return;
+      }
+    } else {
+      // Bot 2: solo actúa si el canal del usuario YA está siendo atendido por Bot 1
+      // (es decir, hay una cola activa para ese canal de voz).
+      // Si no hay cola activa, o la cola activa es de un canal diferente, Bot 2 actúa.
+      if (existingQueue && existingQueue.voiceChannel.id === voiceChannel.id) return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const query = args.join(' ');
     const loadingMsg = await message.reply('🔍 Buscando...');
@@ -98,7 +117,6 @@ module.exports = {
         const videoId = extractYouTubeID(query);
         if (!videoId) return loadingMsg.edit('❌ URL de YouTube no válida.');
 
-        // Usar yt-search con el ID para obtener info sin ejecutar JS
         const result = await yts({ videoId });
         const songInfo = {
           title: result.title || 'Canción de YouTube',
