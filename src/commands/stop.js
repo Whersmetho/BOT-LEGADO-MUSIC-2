@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { canStop } = require('../permissions');
+const { canControl } = require('../permissions');
 const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
@@ -14,7 +14,7 @@ module.exports = {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay música en cola.')] });
     }
 
-    const { allowed, reason } = canStop(message.member, queue);
+    const { allowed, reason } = canControl(message.member, queue, 'l!stop');
     if (!allowed) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription(reason)] });
     }

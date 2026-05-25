@@ -55,6 +55,10 @@ module.exports = {
           return loadingMsg.edit('❌ No pude conectarme al canal de voz.');
         }
         queue = new GuildQueue(voiceChannel, message.channel, connection);
+
+// Dueño de la sesión
+queue.ownerId = message.author.id;
+queue.ownerUsername = message.author.username;
         client.queues.set(message.guild.id, queue);
         connection.on(VoiceConnectionStatus.Disconnected, () => {
           client.queues.delete(message.guild.id);
@@ -108,7 +112,8 @@ module.exports = {
           title: result.title || 'Canción de YouTube',
           url: `https://www.youtube.com/watch?v=${videoId}`,
           duration: result.timestamp || '??:??',
-          requestedBy: message.author.username,
+          requestedBy: message.author.id,
+      requestedByName: message.author.username,
         };
 
         await queue.addSong(songInfo);
@@ -128,7 +133,8 @@ module.exports = {
           title: video.title,
           url: video.url,
           duration: video.timestamp,
-          requestedBy: message.author.username,
+          requestedBy: message.author.id,
+      requestedByName: message.author.username,
         };
 
         await queue.addSong(songInfo);

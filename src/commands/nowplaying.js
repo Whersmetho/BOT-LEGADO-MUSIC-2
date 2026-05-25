@@ -1,3 +1,4 @@
+const { canControl } = require('../permissions');
 const { EmbedBuilder } = require('discord.js');
 const { isBotActiveInGuild } = require('./priority');
 

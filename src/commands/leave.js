@@ -1,10 +1,10 @@
 const { EmbedBuilder } = require('discord.js');
-const { canStop } = require('../permissions');
+const { canControl } = require('../permissions');
 const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'leave',
-  aliases: ['dc', 'disconnect'],
+  aliases: ['dc', 'disconnect', 'leavebot'],
   description: 'Desconecta el bot del canal de voz',
   async execute(message, args, client) {
     // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
@@ -12,8 +12,25 @@ module.exports = {
 
     const queue = client.queues.get(message.guild.id);
 
-    if (queue) {
-      const { allowed, reason } = canStop(message.member, queue);
+    
+    // Transferir ownership si el dueño salió del canal
+    if (queue?.voiceChannel) {
+      const ownerStillInside = queue.voiceChannel.members.has(queue.ownerId);
+
+      if (!ownerStillInside) {
+        const nextUser = queue.voiceChannel.members
+          .filter(member => !member.user.bot)
+          .first();
+
+        if (nextUser) {
+          queue.ownerId = nextUser.id;
+          queue.ownerUsername = nextUser.user.username;
+        }
+      }
+    }
+
+if (queue) {
+      const { allowed, reason } = canControl(message.member, queue, 'l!leave');
       if (!allowed) {
         return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription(reason)] });
       }
