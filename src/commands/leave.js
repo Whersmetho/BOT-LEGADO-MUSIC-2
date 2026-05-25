@@ -1,41 +1,26 @@
 const { EmbedBuilder } = require('discord.js');
-const { canControl } = require('../permissions');
+const { canStop } = require('../permissions');
 const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'leave',
-  aliases: ['dc', 'disconnect', 'leavebot'],
+  aliases: ['dc', 'disconnect'],
   description: 'Desconecta el bot del canal de voz',
   async execute(message, args, client) {
-    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
     if (!isBotActiveInGuild(client, message.guild)) return;
 
-    const queue = client.queues.get(message.guild.id);
+    const queue = client.queues.get(queueKey);
 
-    
-    // Transferir ownership si el dueño salió del canal
-    if (queue?.voiceChannel) {
-      const ownerStillInside = queue.voiceChannel.members.has(queue.ownerId);
-
-      if (!ownerStillInside) {
-        const nextUser = queue.voiceChannel.members
-          .filter(member => !member.user.bot)
-          .first();
-
-        if (nextUser) {
-          queue.ownerId = nextUser.id;
-          queue.ownerUsername = nextUser.user.username;
-        }
-      }
-    }
-
-if (queue) {
-      const { allowed, reason } = canControl(message.member, queue, 'l!leave');
+    if (queue) {
+      const { allowed, reason } = canStop(message.member, queue);
       if (!allowed) {
         return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription(reason)] });
       }
       try { queue.destroy(); } catch {}
-      client.queues.delete(message.guild.id);
+      client.queues.delete(queueKey);
       return message.reply({
         embeds: [new EmbedBuilder().setColor('#95A5A6').setDescription('👋 **Desconectado y cola limpiada.**').setFooter({ text: 'LEGADO MUSIC' })]
       });

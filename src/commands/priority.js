@@ -30,7 +30,7 @@ async function hasPriorityToPlay(message, client) {
 
   if (BOT_PRIORITY === 1) {
     // Bot 1: si ya está activo en este servidor en OTRO canal, cede el paso
-    const existingQueue = client.queues.get(message.guild.id);
+    const existingQueue = client.queues.get(queueKey);
     if (existingQueue && existingQueue.voiceChannel.id !== voiceChannel.id) {
       return false;
     }

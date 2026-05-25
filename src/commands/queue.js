@@ -11,10 +11,12 @@ module.exports = {
   aliases: ['q'],
   description: 'Muestra la cola de canciones',
   async execute(message, args, client) {
-    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
     if (!isBotActiveInGuild(client, message.guild)) return;
 
-    const queue = client.queues.get(message.guild.id);
+    const queue = client.queues.get(queueKey);
     if (!queue || queue.songs.length === 0) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('📭 **La cola está vacía.**')] });
     }

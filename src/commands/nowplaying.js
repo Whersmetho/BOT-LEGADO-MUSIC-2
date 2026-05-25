@@ -1,4 +1,3 @@
-const { canControl } = require('../permissions');
 const { EmbedBuilder } = require('discord.js');
 const { isBotActiveInGuild } = require('./priority');
 
@@ -12,10 +11,12 @@ module.exports = {
   aliases: ['np'],
   description: 'Muestra la canción actual',
   async execute(message, args, client) {
-    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
     if (!isBotActiveInGuild(client, message.guild)) return;
 
-    const queue = client.queues.get(message.guild.id);
+    const queue = client.queues.get(queueKey);
     const song = queue?.getNowPlaying();
     if (!song) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay nada reproduciéndose.')] });

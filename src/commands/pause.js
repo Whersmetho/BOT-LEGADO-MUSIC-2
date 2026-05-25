@@ -6,10 +6,12 @@ module.exports = {
   name: 'pause',
   description: 'Pausa la reproducción',
   async execute(message, args, client) {
-    // Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
+    
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
     if (!isBotActiveInGuild(client, message.guild)) return;
 
-    const queue = client.queues.get(message.guild.id);
+    const queue = client.queues.get(queueKey);
     if (!queue || !queue.playing) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay música reproduciéndose.')] });
     }

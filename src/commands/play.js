@@ -20,7 +20,9 @@ module.exports = {
   aliases: ['p'],
   description: 'Reproduce música de YouTube o Spotify',
   async execute(message, args, client) {
-    if (!args.length) {
+    
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+if (!args.length) {
       return message.reply('❌ Escribe el nombre o URL de una canción. Ej: `l!play despacito`');
     }
 
@@ -41,7 +43,7 @@ module.exports = {
 
     try {
       // Obtener o crear la cola
-      let queue = client.queues.get(message.guild.id);
+      let queue = client.queues.get(queueKey);
       if (!queue) {
         const connection = joinVoiceChannel({
           channelId: voiceChannel.id,
@@ -55,13 +57,9 @@ module.exports = {
           return loadingMsg.edit('❌ No pude conectarme al canal de voz.');
         }
         queue = new GuildQueue(voiceChannel, message.channel, connection);
-
-// Dueño de la sesión
-queue.ownerId = message.author.id;
-queue.ownerUsername = message.author.username;
-        client.queues.set(message.guild.id, queue);
+        client.queues.set(queueKey, queue);
         connection.on(VoiceConnectionStatus.Disconnected, () => {
-          client.queues.delete(message.guild.id);
+          client.queues.delete(queueKey);
         });
       }
 
@@ -112,8 +110,7 @@ queue.ownerUsername = message.author.username;
           title: result.title || 'Canción de YouTube',
           url: `https://www.youtube.com/watch?v=${videoId}`,
           duration: result.timestamp || '??:??',
-          requestedBy: message.author.id,
-      requestedByName: message.author.username,
+          requestedBy: message.author.username,
         };
 
         await queue.addSong(songInfo);
@@ -133,8 +130,7 @@ queue.ownerUsername = message.author.username;
           title: video.title,
           url: video.url,
           duration: video.timestamp,
-          requestedBy: message.author.id,
-      requestedByName: message.author.username,
+          requestedBy: message.author.username,
         };
 
         await queue.addSong(songInfo);
