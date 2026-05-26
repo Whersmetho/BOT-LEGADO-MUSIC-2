@@ -1,169 +1,189 @@
-const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
-const yts = require('yt-search');
-const GuildQueue = require('../GuildQueue');
-const spotify = require('../spotify');
-const { hasPriorityToPlay } = require('./priority');
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  AudioPlayerStatus,
+  NoSubscriberBehavior,
+} = require('@discordjs/voice');
 
-function isYouTubeURL(str) {
-  return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/.test(str);
-}
+const {
+  EmbedBuilder
+} = require('discord.js');
 
-function extractYouTubeID(url) {
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
-  return match ? match[1] : null;
-}
+const play = require('play-dl');
+
+const { GuildQueue } = require('../structures/GuildQueue');
+const { canControl } = require('../permissions');
 
 module.exports = {
   name: 'play',
   aliases: ['p'],
-  description: 'Reproduce música de YouTube o Spotify',
+  description: 'Reproduce música',
+
   async execute(message, args, client) {
-    const queueKey = `${message.guild.id}-${client.user.id}`;
 
     if (!args.length) {
-      return message.reply('❌ Escribe el nombre o URL de una canción. Ej: `l!play despacito`');
+      return message.reply('❌ Debes escribir una canción.');
     }
 
-    const voiceChannel = message.member?.voice?.channel;
-    if (!voiceChannel) return message.reply('🎤 Debes estar en un canal de voz primero.');
+    const voiceChannel = message.member.voice.channel;
 
-    const permissions = voiceChannel.permissionsFor(message.client.user);
-    if (!permissions.has('Connect') || !permissions.has('Speak')) {
-      return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
+    if (!voiceChannel) {
+      return message.reply('❌ Debes entrar a un canal de voz.');
     }
 
-    const canPlay = await hasPriorityToPlay(message, client);
+    // BOT 2 espera para evitar doble conexión
+    await new Promise(r => setTimeout(r, 1500));
 
-if (!canPlay) return;
+    // Revisar si ya hay otro bot conectado
+    const existingBots = voiceChannel.members.filter(
+      m =>
+        m.user.bot &&
+        m.id !== client.user.id
+    );
 
-    const query = args.join(' ');
-    const loadingMsg = await message.reply('🔍 Buscando...');
+    // Si ya hay otro bot conectado, cancelar
+    if (existingBots.size > 0) {
+      return;
+    }
+
+    const queueKey = `${message.guild.id}-${client.user.id}`;
+
+    let queue = client.queues.get(queueKey);
 
     try {
-      let queue = client.queues.get(queueKey);
+
+      const query = args.join(' ');
+
+      const searchResult = await play.search(query, {
+        limit: 1
+      });
+
+      if (!searchResult.length) {
+        return message.reply('❌ No encontré resultados.');
+      }
+
+      const song = {
+        title: searchResult[0].title,
+        url: searchResult[0].url,
+        duration: searchResult[0].durationRaw,
+        thumbnail: searchResult[0].thumbnails?.[0]?.url,
+        requestedBy: message.author.id,
+        requestedByName: message.author.username,
+      };
+
+      // Crear queue
       if (!queue) {
+
         const connection = joinVoiceChannel({
           channelId: voiceChannel.id,
           guildId: message.guild.id,
           adapterCreator: message.guild.voiceAdapterCreator,
         });
-        try {
-          await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-        } catch {
-          connection.destroy();
-          return loadingMsg.edit('❌ No pude conectarme al canal de voz.');
-        }
-        queue = new GuildQueue(voiceChannel, message.channel, connection);
+
+        queue = new GuildQueue(
+          voiceChannel,
+          message.channel,
+          connection
+        );
+
+        queue.ownerId = message.author.id;
+        queue.ownerUsername = message.author.username;
+
         client.queues.set(queueKey, queue);
-        connection.on(VoiceConnectionStatus.Disconnected, () => {
-          client.queues.delete(queueKey);
+      }
+
+      queue.songs.push(song);
+
+      const embed = new EmbedBuilder()
+        .setColor('#2ECC71')
+        .setTitle('🎵 Canción agregada')
+        .setDescription(`[${song.title}](${song.url})`)
+        .setThumbnail(song.thumbnail || null)
+        .addFields({
+          name: '👤 Solicitada por',
+          value: message.author.username
         });
-      }
 
-      // ── Spotify ──
-      if (query.includes('open.spotify.com')) {
-        const spotifyType = spotify.getSpotifyType(query);
-        if (!spotifyType) return loadingMsg.edit('❌ URL de Spotify no válida.');
+      message.reply({
+        embeds: [embed]
+      });
 
-        if (spotifyType === 'track') {
-          await loadingMsg.edit('🟢 Obteniendo canción de Spotify...');
-          const [trackInfo] = await spotify.getTrack(query);
-          const songInfo = await searchYouTube(trackInfo, message.author);
-          if (!songInfo) return loadingMsg.edit(`❌ No encontré "${trackInfo.title}" en YouTube.`);
-          await queue.addSong(songInfo);
-          if (queue.songs.length > 1) await loadingMsg.edit(`➕ **${songInfo.title}** añadido a la cola.`);
-          else await loadingMsg.delete().catch(() => {});
+      // Si ya está reproduciendo no reiniciar
+      if (queue.playing) return;
 
-        } else if (spotifyType === 'playlist') {
-          await loadingMsg.edit('🟢 Cargando playlist de Spotify...');
-          const { tracks, playlistName, total } = await spotify.getPlaylist(query);
-          await loadingMsg.edit(`📋 Cargando **${playlistName}** — ${total} canciones...`);
+      queue.playing = true;
 
-          let added = 0;
-          // Añadir primera canción y reproducir de inmediato
-          for (const t of tracks) {
-            const s = await searchYouTube(t, message.author);
-            if (s) {
-              await queue.addSong(s, added > 0); // silent después de la primera
-              added++;
-            }
-          }
-          await loadingMsg.edit(`✅ Playlist **${playlistName}** — ${added}/${total} canciones añadidas a la cola.`);
-
-        } else if (spotifyType === 'album') {
-          await loadingMsg.edit('🟢 Cargando álbum de Spotify...');
-          const { tracks, albumName, total } = await spotify.getAlbum(query);
-          await loadingMsg.edit(`💿 Cargando **${albumName}** — ${total} canciones...`);
-
-          let added = 0;
-          for (const t of tracks) {
-            const s = await searchYouTube(t, message.author);
-            if (s) {
-              await queue.addSong(s, added > 0);
-              added++;
-            }
-          }
-          await loadingMsg.edit(`✅ Álbum **${albumName}** — ${added}/${total} canciones añadidas.`);
-        }
-
-      // ── URL de YouTube ──
-      } else if (isYouTubeURL(query)) {
-        const videoId = extractYouTubeID(query);
-        if (!videoId) return loadingMsg.edit('❌ URL de YouTube no válida.');
-
-        const result = await yts({ videoId });
-        const songInfo = {
-          title: result.title || 'Canción de YouTube',
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          duration: result.timestamp || '??:??',
-          requestedBy: message.author,
-        };
-
-        await queue.addSong(songInfo);
-        if (queue.songs.length > 1) {
-          await loadingMsg.edit(`➕ **${songInfo.title}** (${songInfo.duration}) añadido a la cola.`);
-        } else {
-          await loadingMsg.delete().catch(() => {});
-        }
-
-      // ── Búsqueda por texto ──
-      } else {
-        const results = await yts(query);
-        const video = results.videos[0];
-        if (!video) return loadingMsg.edit('❌ No se encontraron resultados.');
-
-        const songInfo = {
-          title: video.title,
-          url: video.url,
-          duration: video.timestamp,
-          requestedBy: message.author,
-        };
-
-        await queue.addSong(songInfo);
-        if (queue.songs.length > 1) {
-          await loadingMsg.edit(`➕ **${songInfo.title}** (${songInfo.duration}) añadido a la cola.`);
-        } else {
-          await loadingMsg.delete().catch(() => {});
-        }
-      }
+      playSong(queue, client);
 
     } catch (err) {
-      console.error('Error en play:', err.message);
-      loadingMsg.edit('❌ Ocurrió un error. Revisa la consola para más detalles.');
+      console.error(err);
+
+      message.reply('❌ Error reproduciendo canción.');
     }
   },
 };
 
-async function searchYouTube(trackInfo, author) {
+async function playSong(queue, client) {
+
+  if (!queue.songs.length) {
+
+    queue.playing = false;
+
+    try {
+      queue.connection.destroy();
+    } catch {}
+
+    const queueKey =
+      `${queue.voiceChannel.guild.id}-${client.user.id}`;
+
+    client.queues.delete(queueKey);
+
+    return;
+  }
+
+  const song = queue.songs[0];
+
   try {
-    const results = await yts(trackInfo.searchQuery);
-    const video = results.videos[0];
-    if (!video) return null;
-    return {
-      title: trackInfo.title,
-      url: video.url,
-      duration: trackInfo.duration,
-      requestedBy: author,
-    };
-  } catch { return null; }
+
+    const stream = await play.stream(song.url);
+
+    const resource = createAudioResource(stream.stream, {
+      inputType: stream.type
+    });
+
+    const player = createAudioPlayer({
+      behaviors: {
+        noSubscriber: NoSubscriberBehavior.Play
+      }
+    });
+
+    queue.connection.subscribe(player);
+
+    player.play(resource);
+
+    player.on(AudioPlayerStatus.Idle, () => {
+
+      queue.songs.shift();
+
+      playSong(queue, client);
+    });
+
+    player.on('error', err => {
+
+      console.error(err);
+
+      queue.songs.shift();
+
+      playSong(queue, client);
+    });
+
+  } catch (err) {
+
+    console.error(err);
+
+    queue.songs.shift();
+
+    playSong(queue, client);
+  }
 }
