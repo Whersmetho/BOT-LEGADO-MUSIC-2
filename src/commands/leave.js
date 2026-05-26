@@ -11,14 +11,19 @@ module.exports = {
 
     const queue = client.queues.get(queueKey);
 
+    // Si este bot no tiene cola activa, ignorar silenciosamente.
+    // Así solo responde el bot que realmente estaba tocando.
     if (!queue) {
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor('#E74C3C')
-            .setDescription('❌ No hay cola activa.')
-        ]
-      });
+      return;
+    }
+
+    // Verificar que este bot está en el mismo canal de voz que el usuario.
+    // Si el usuario no está en ningún canal, o está en uno diferente, ignorar.
+    const userChannel = message.member.voice.channel;
+    const botChannel = queue.voiceChannel;
+
+    if (!userChannel || userChannel.id !== botChannel.id) {
+      return;
     }
 
     const { allowed, reason } = canControl(
