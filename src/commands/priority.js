@@ -23,9 +23,8 @@ function hasPriorityToControl(client, guildId) {
   return !!queue;
 }
 
-// ESTA FUNCIÓN FALTABA
-function hasPriorityToPlay(client, guild) {
-  const queueKey = `${guild.id}-${client.user.id}`;
+function hasPriorityToPlay(client, guildId) {
+  const queueKey = `${guildId}-${client.user.id}`;
 
   const queue = client.queues.get(queueKey);
 
