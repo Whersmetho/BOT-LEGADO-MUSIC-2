@@ -1,70 +1,178 @@
-const {
-  joinVoiceChannel
-} = require('@discordjs/voice');
+const { joinVoiceChannel, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
+const yts = require('yt-search');
+const GuildQueue = require('../GuildQueue');
+const spotify = require('../spotify');
+ 
+function isYouTubeURL(str) {
+  return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/.test(str);
+}
+ 
+function extractYouTubeID(url) {
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
  
 module.exports = {
   name: 'play',
   aliases: ['p'],
- 
+  description: 'Reproduce música de YouTube o Spotify',
   async execute(message, args, client) {
- 
-    const voiceChannel = message.member.voice.channel;
- 
-    if (!voiceChannel) {
-      return message.reply('❌ Debes entrar a un canal de voz.');
-    }
- 
-    // =========================
-    // ANTI DOBLE BOT
-    // SOLO BOT 2
-    // =========================
- 
-    // Esperar para dar prioridad al BOT 1
-    await new Promise(r => setTimeout(r, 1500));
- 
-    // Revisar si ya hay otro bot conectado
-    const existingBots = voiceChannel.members.filter(
-      m =>
-        m.user.bot &&
-        m.id !== client.user.id
-    );
- 
-    // Si ya hay otro bot conectado cancelar
-    if (existingBots.size > 0) {
-      return;
-    }
- 
-    // =========================
-    // RESTO DE TU PLAY NORMAL
-    // =========================
- 
     const queueKey = `${message.guild.id}-${client.user.id}`;
  
-    let queue = client.queues.get(queueKey);
- 
-    // Crear queue si no existe
-    if (!queue) {
- 
-      const connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: message.guild.id,
-        adapterCreator: message.guild.voiceAdapterCreator,
-      });
- 
-      queue = {
-        voiceChannel,
-        connection,
-        songs: [],
-        playing: true,
-        ownerId: message.author.id,
-      };
- 
-      client.queues.set(queueKey, queue);
+    if (!args.length) {
+      return message.reply('❌ Escribe el nombre o URL de una canción. Ej: `l!play despacito`');
     }
  
-    // Tu lógica original aquí
-    // agregar canciones
-    // reproducir
-    // etc.
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) return message.reply('🎤 Debes estar en un canal de voz primero.');
+ 
+    const permissions = voiceChannel.permissionsFor(message.client.user);
+    if (!permissions.has('Connect') || !permissions.has('Speak')) {
+      return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
+    }
+ 
+    // =========================
+    // ANTI DOBLE BOT — BOT 2
+    // Espera 1.5s para darle prioridad al bot 1.
+    // Si el bot 1 ya está en el canal, este bot no hace nada.
+    // =========================
+    await new Promise(r => setTimeout(r, 1500));
+ 
+    const existingBots = voiceChannel.members.filter(
+      m => m.user.bot && m.id !== client.user.id
+    );
+    if (existingBots.size > 0) return;
+ 
+    // =========================
+    // LÓGICA DE PLAY NORMAL
+    // =========================
+    const query = args.join(' ');
+    const loadingMsg = await message.reply('🔍 Buscando...');
+ 
+    try {
+      let queue = client.queues.get(queueKey);
+      if (!queue) {
+        const connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: message.guild.id,
+          adapterCreator: message.guild.voiceAdapterCreator,
+        });
+        try {
+          await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+        } catch {
+          connection.destroy();
+          return loadingMsg.edit('❌ No pude conectarme al canal de voz.');
+        }
+        queue = new GuildQueue(voiceChannel, message.channel, connection);
+        client.queues.set(queueKey, queue);
+        connection.on(VoiceConnectionStatus.Disconnected, () => {
+          client.queues.delete(queueKey);
+        });
+      }
+ 
+      // ── Spotify ──
+      if (query.includes('open.spotify.com')) {
+        const spotifyType = spotify.getSpotifyType(query);
+        if (!spotifyType) return loadingMsg.edit('❌ URL de Spotify no válida.');
+ 
+        if (spotifyType === 'track') {
+          await loadingMsg.edit('🟢 Obteniendo canción de Spotify...');
+          const [trackInfo] = await spotify.getTrack(query);
+          const songInfo = await searchYouTube(trackInfo, message.author);
+          if (!songInfo) return loadingMsg.edit(`❌ No encontré "${trackInfo.title}" en YouTube.`);
+          await queue.addSong(songInfo);
+          if (queue.songs.length > 1) await loadingMsg.edit(`➕ **${songInfo.title}** añadido a la cola.`);
+          else await loadingMsg.delete().catch(() => {});
+ 
+        } else if (spotifyType === 'playlist') {
+          await loadingMsg.edit('🟢 Cargando playlist de Spotify...');
+          const { tracks, playlistName, total } = await spotify.getPlaylist(query);
+          await loadingMsg.edit(`📋 Cargando **${playlistName}** — ${total} canciones...`);
+ 
+          let added = 0;
+          for (const t of tracks) {
+            const s = await searchYouTube(t, message.author);
+            if (s) {
+              await queue.addSong(s, added > 0);
+              added++;
+            }
+          }
+          await loadingMsg.edit(`✅ Playlist **${playlistName}** — ${added}/${total} canciones añadidas a la cola.`);
+ 
+        } else if (spotifyType === 'album') {
+          await loadingMsg.edit('🟢 Cargando álbum de Spotify...');
+          const { tracks, albumName, total } = await spotify.getAlbum(query);
+          await loadingMsg.edit(`💿 Cargando **${albumName}** — ${total} canciones...`);
+ 
+          let added = 0;
+          for (const t of tracks) {
+            const s = await searchYouTube(t, message.author);
+            if (s) {
+              await queue.addSong(s, added > 0);
+              added++;
+            }
+          }
+          await loadingMsg.edit(`✅ Álbum **${albumName}** — ${added}/${total} canciones añadidas.`);
+        }
+ 
+      // ── URL de YouTube ──
+      } else if (isYouTubeURL(query)) {
+        const videoId = extractYouTubeID(query);
+        if (!videoId) return loadingMsg.edit('❌ URL de YouTube no válida.');
+ 
+        const result = await yts({ videoId });
+        const songInfo = {
+          title: result.title || 'Canción de YouTube',
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          duration: result.timestamp || '??:??',
+          requestedBy: message.author,
+        };
+ 
+        await queue.addSong(songInfo);
+        if (queue.songs.length > 1) {
+          await loadingMsg.edit(`➕ **${songInfo.title}** (${songInfo.duration}) añadido a la cola.`);
+        } else {
+          await loadingMsg.delete().catch(() => {});
+        }
+ 
+      // ── Búsqueda por texto ──
+      } else {
+        const results = await yts(query);
+        const video = results.videos[0];
+        if (!video) return loadingMsg.edit('❌ No se encontraron resultados.');
+ 
+        const songInfo = {
+          title: video.title,
+          url: video.url,
+          duration: video.timestamp,
+          requestedBy: message.author,
+        };
+ 
+        await queue.addSong(songInfo);
+        if (queue.songs.length > 1) {
+          await loadingMsg.edit(`➕ **${songInfo.title}** (${songInfo.duration}) añadido a la cola.`);
+        } else {
+          await loadingMsg.delete().catch(() => {});
+        }
+      }
+ 
+    } catch (err) {
+      console.error('Error en play:', err.message);
+      loadingMsg.edit('❌ Ocurrió un error. Revisa la consola para más detalles.');
+    }
   },
 };
+ 
+async function searchYouTube(trackInfo, author) {
+  try {
+    const results = await yts(trackInfo.searchQuery);
+    const video = results.videos[0];
+    if (!video) return null;
+    return {
+      title: trackInfo.title,
+      url: video.url,
+      duration: trackInfo.duration,
+      requestedBy: author,
+    };
+  } catch { return null; }
+}
