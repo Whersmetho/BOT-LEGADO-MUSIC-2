@@ -98,6 +98,40 @@ class GuildQueue {
       this._cancelPrefetch();
     });
 
+    // Detectar cuando el bot es kickeado del canal de voz
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      // Pequeña espera para distinguir kick de reconexión normal
+      await new Promise(r => setTimeout(r, 2000));
+      // Si la conexión ya fue destruida o el bot se reconectó, ignorar
+      if (this.destroyed) return;
+      if (
+        connection.state.status === VoiceConnectionStatus.Ready ||
+        connection.state.status === VoiceConnectionStatus.Connecting ||
+        connection.state.status === VoiceConnectionStatus.Signalling
+      ) return;
+
+      // Fue kickeado — limpiar todo y avisar
+      this.destroyed = true;
+      this._killProcesses();
+      this._cancelPrefetch();
+      this._disableNowPlayingButtons();
+      this.songs = [];
+      this.playing = false;
+
+      try {
+        this.textChannel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#E74C3C')
+              .setDescription('👢 **Me kickearon del canal de voz.** Cola limpiada.')
+              .setFooter({ text: 'LEGADO MUSIC' })
+          ]
+        });
+      } catch {}
+
+      try { connection.destroy(); } catch {}
+    });
+
     this.player.on(AudioPlayerStatus.Idle, async () => {
       if (this.destroyed) return;
 
