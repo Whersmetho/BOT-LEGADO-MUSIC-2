@@ -4,12 +4,10 @@ const GuildQueue = require('../GuildQueue');
 const spotify = require('../spotify');
 const { hasPriorityToPlay } = require('./priority');
 
-// Detecta si es URL de YouTube
 function isYouTubeURL(str) {
   return /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)/.test(str);
 }
 
-// Extrae el ID de un video de YouTube
 function extractYouTubeID(url) {
   const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : null;
@@ -20,9 +18,9 @@ module.exports = {
   aliases: ['p'],
   description: 'Reproduce música de YouTube o Spotify',
   async execute(message, args, client) {
-    
     const queueKey = `${message.guild.id}-${client.user.id}`;
-if (!args.length) {
+
+    if (!args.length) {
       return message.reply('❌ Escribe el nombre o URL de una canción. Ej: `l!play despacito`');
     }
 
@@ -34,15 +32,12 @@ if (!args.length) {
       return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
     }
 
-    // ── Lógica de prioridad ──────────────────────────────────────────────────
     if (!(await hasPriorityToPlay(message, client))) return;
-    // ────────────────────────────────────────────────────────────────────────
 
     const query = args.join(' ');
     const loadingMsg = await message.reply('🔍 Buscando...');
 
     try {
-      // Obtener o crear la cola
       let queue = client.queues.get(queueKey);
       if (!queue) {
         const connection = joinVoiceChannel({
@@ -63,7 +58,7 @@ if (!args.length) {
         });
       }
 
-      // ── Spotify ──────────────────────────────────────────────────────────────
+      // ── Spotify ──
       if (query.includes('open.spotify.com')) {
         const spotifyType = spotify.getSpotifyType(query);
         if (!spotifyType) return loadingMsg.edit('❌ URL de Spotify no válida.');
@@ -71,7 +66,7 @@ if (!args.length) {
         if (spotifyType === 'track') {
           await loadingMsg.edit('🟢 Obteniendo canción de Spotify...');
           const [trackInfo] = await spotify.getTrack(query);
-          const songInfo = await searchYouTube(trackInfo, message.author.username);
+          const songInfo = await searchYouTube(trackInfo, message.author);
           if (!songInfo) return loadingMsg.edit(`❌ No encontré "${trackInfo.title}" en YouTube.`);
           await queue.addSong(songInfo);
           if (queue.songs.length > 1) await loadingMsg.edit(`➕ **${songInfo.title}** añadido a la cola.`);
@@ -80,27 +75,36 @@ if (!args.length) {
         } else if (spotifyType === 'playlist') {
           await loadingMsg.edit('🟢 Cargando playlist de Spotify...');
           const { tracks, playlistName, total } = await spotify.getPlaylist(query);
-          await loadingMsg.edit(`📋 **${playlistName}** — ${total} canciones. Añadiendo...`);
+          await loadingMsg.edit(`📋 Cargando **${playlistName}** — ${total} canciones...`);
+
           let added = 0;
+          // Añadir primera canción y reproducir de inmediato
           for (const t of tracks) {
-            const s = await searchYouTube(t, message.author.username);
-            if (s) { await queue.addSong(s); added++; }
+            const s = await searchYouTube(t, message.author);
+            if (s) {
+              await queue.addSong(s, added > 0); // silent después de la primera
+              added++;
+            }
           }
-          await loadingMsg.edit(`✅ Playlist **${playlistName}** — ${added}/${total} canciones añadidas.`);
+          await loadingMsg.edit(`✅ Playlist **${playlistName}** — ${added}/${total} canciones añadidas a la cola.`);
 
         } else if (spotifyType === 'album') {
           await loadingMsg.edit('🟢 Cargando álbum de Spotify...');
           const { tracks, albumName, total } = await spotify.getAlbum(query);
-          await loadingMsg.edit(`💿 **${albumName}** — ${total} canciones. Añadiendo...`);
+          await loadingMsg.edit(`💿 Cargando **${albumName}** — ${total} canciones...`);
+
           let added = 0;
           for (const t of tracks) {
-            const s = await searchYouTube(t, message.author.username);
-            if (s) { await queue.addSong(s); added++; }
+            const s = await searchYouTube(t, message.author);
+            if (s) {
+              await queue.addSong(s, added > 0);
+              added++;
+            }
           }
           await loadingMsg.edit(`✅ Álbum **${albumName}** — ${added}/${total} canciones añadidas.`);
         }
 
-      // ── URL directa de YouTube ───────────────────────────────────────────────
+      // ── URL de YouTube ──
       } else if (isYouTubeURL(query)) {
         const videoId = extractYouTubeID(query);
         if (!videoId) return loadingMsg.edit('❌ URL de YouTube no válida.');
@@ -110,7 +114,7 @@ if (!args.length) {
           title: result.title || 'Canción de YouTube',
           url: `https://www.youtube.com/watch?v=${videoId}`,
           duration: result.timestamp || '??:??',
-          requestedBy: message.author.username,
+          requestedBy: message.author,
         };
 
         await queue.addSong(songInfo);
@@ -120,7 +124,7 @@ if (!args.length) {
           await loadingMsg.delete().catch(() => {});
         }
 
-      // ── Búsqueda por texto ───────────────────────────────────────────────────
+      // ── Búsqueda por texto ──
       } else {
         const results = await yts(query);
         const video = results.videos[0];
@@ -130,7 +134,7 @@ if (!args.length) {
           title: video.title,
           url: video.url,
           duration: video.timestamp,
-          requestedBy: message.author.username,
+          requestedBy: message.author,
         };
 
         await queue.addSong(songInfo);
@@ -148,7 +152,7 @@ if (!args.length) {
   },
 };
 
-async function searchYouTube(trackInfo, requestedBy) {
+async function searchYouTube(trackInfo, author) {
   try {
     const results = await yts(trackInfo.searchQuery);
     const video = results.videos[0];
@@ -157,7 +161,7 @@ async function searchYouTube(trackInfo, requestedBy) {
       title: trackInfo.title,
       url: video.url,
       duration: trackInfo.duration,
-      requestedBy,
+      requestedBy: author,
     };
   } catch { return null; }
 }

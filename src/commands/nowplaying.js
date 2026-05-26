@@ -1,9 +1,14 @@
 const { EmbedBuilder } = require('discord.js');
-const { isBotActiveInGuild } = require('./priority');
 
 function extractID(url) {
   const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : '';
+}
+
+function formatRequester(requestedBy) {
+  if (!requestedBy) return 'Desconocido';
+  if (typeof requestedBy === 'string') return requestedBy;
+  return `<@${requestedBy.id}>`;
 }
 
 module.exports = {
@@ -11,16 +16,14 @@ module.exports = {
   aliases: ['np'],
   description: 'Muestra la canción actual',
   async execute(message, args, client) {
-    
     const queueKey = `${message.guild.id}-${client.user.id}`;
-// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
-    if (!isBotActiveInGuild(client, message.guild)) return;
-
     const queue = client.queues.get(queueKey);
     const song = queue?.getNowPlaying();
+
     if (!song) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay nada reproduciéndose.')] });
     }
+
     message.reply({
       embeds: [
         new EmbedBuilder()
@@ -31,9 +34,10 @@ module.exports = {
           .setThumbnail(`https://img.youtube.com/vi/${extractID(song.url)}/hqdefault.jpg`)
           .addFields(
             { name: '⏱️ Duración', value: song.duration || '??:??', inline: true },
-            { name: '🎧 Pedido por', value: song.requestedBy || 'Desconocido', inline: true },
+            { name: '🎧 Pedido por', value: formatRequester(song.requestedBy), inline: true },
             { name: '🔁 Bucle', value: queue.loop ? 'Activado' : 'Desactivado', inline: true },
-            { name: '🔀 Autoplay', value: queue.autoplay ? 'Activado' : 'Desactivado', inline: true }
+            { name: '🔀 Autoplay', value: queue.autoplay ? 'Activado' : 'Desactivado', inline: true },
+            { name: '📋 En cola', value: `${queue.getQueue().length} canciones`, inline: true },
           )
           .setFooter({ text: 'LEGADO MUSIC' })
           .setTimestamp()

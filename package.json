@@ -1,18 +1,14 @@
 {
   "name": "discord-music-bot",
   "version": "1.0.0",
-  "description": "",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
     "discord.js": "^14.26.4",
-    "dotenv": "^17.4.2",
+    "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.3.0",
     "opusscript": "^0.0.8",
     "spotify-web-api-node": "^5.0.2",

@@ -1,18 +1,12 @@
 const { EmbedBuilder } = require('discord.js');
 const { canStop } = require('../permissions');
-const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'leave',
   aliases: ['dc', 'disconnect'],
   description: 'Desconecta el bot del canal de voz',
   async execute(message, args, client) {
-    
-    const queueKey = `${message.guild.id}-${client.user.id}`;
-// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
-    if (!isBotActiveInGuild(client, message.guild)) return;
-
-    const queue = client.queues.get(queueKey);
+    const queue = client.queues.get(`${message.guild.id}-${client.user.id}`);
 
     if (queue) {
       const { allowed, reason } = canStop(message.member, queue);
@@ -20,7 +14,7 @@ module.exports = {
         return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription(reason)] });
       }
       try { queue.destroy(); } catch {}
-      client.queues.delete(queueKey);
+      client.queues.delete(`${message.guild.id}-${client.user.id}`);
       return message.reply({
         embeds: [new EmbedBuilder().setColor('#95A5A6').setDescription('👋 **Desconectado y cola limpiada.**').setFooter({ text: 'LEGADO MUSIC' })]
       });

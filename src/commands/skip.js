@@ -1,19 +1,13 @@
 const { EmbedBuilder } = require('discord.js');
 const { canControl } = require('../permissions');
-const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'skip',
   aliases: ['s'],
   description: 'Salta la canción actual',
   async execute(message, args, client) {
-    
-    const queueKey = `${message.guild.id}-${client.user.id}`;
-// Prioridad: si este bot no está activo en el servidor, ignorar silenciosamente
-    if (!isBotActiveInGuild(client, message.guild)) return;
-
-    const queue = client.queues.get(queueKey);
-    if (!queue || !queue.playing) {
+    const queue = client.queues.get(`${message.guild.id}-${client.user.id}`);
+    if (!queue || queue.songs.length === 0) {
       return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay música reproduciéndose.')] });
     }
 

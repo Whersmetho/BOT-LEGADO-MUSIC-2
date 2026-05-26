@@ -6,11 +6,29 @@ const {
   StreamType,
 } = require('@discordjs/voice');
 const { spawn } = require('child_process');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getRelatedVideos } = require('./autoplay');
 const ffmpegPath = require('ffmpeg-static');
+const path = require('path');
+const fs = require('fs');
 
-function nowPlayingEmbed(song, autoplay = false) {
+const cookiesPath = path.join(process.cwd(), 'cookies.txt');
+const nodePath = process.execPath;
+const MAX_HISTORY = 50;
+
+function extractID(url) {
+  const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+  return match ? match[1] : '';
+}
+
+// Formatea el requestedBy como mención si es un User object, o string si es texto
+function formatRequester(requestedBy) {
+  if (!requestedBy) return 'Desconocido';
+  if (typeof requestedBy === 'string') return requestedBy;
+  return `<@${requestedBy.id}>`;
+}
+
+function nowPlayingEmbed(song, queue) {
   return new EmbedBuilder()
     .setColor('#9B59B6')
     .setAuthor({ name: '▶️ Reproduciendo ahora' })
@@ -19,11 +37,21 @@ function nowPlayingEmbed(song, autoplay = false) {
     .setThumbnail(`https://img.youtube.com/vi/${extractID(song.url)}/hqdefault.jpg`)
     .addFields(
       { name: '⏱️ Duración', value: song.duration || '??:??', inline: true },
-      { name: '🎧 Pedido por', value: song.requestedBy || 'Autoplay', inline: true },
-      { name: '🔀 Autoplay', value: autoplay ? 'Activado' : 'Desactivado', inline: true }
+      { name: '🎧 Pedido por', value: formatRequester(song.requestedBy), inline: true },
+      { name: '🔀 Autoplay', value: queue.autoplay ? 'Activado' : 'Desactivado', inline: true }
     )
-    .setFooter({ text: 'LEGADO MUSIC' })
+    .setFooter({ text: `LEGADO MUSIC • ${queue.songs.length > 1 ? `${queue.songs.length - 1} en cola` : 'Cola vacía'}` })
     .setTimestamp();
+}
+
+function nowPlayingButtons(queue) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('btn_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('btn_loop').setEmoji('🔁').setStyle(queue.loop ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('btn_autoplay').setEmoji('🔀').setStyle(queue.autoplay ? ButtonStyle.Primary : ButtonStyle.Secondary),
+  );
 }
 
 function queueEmbed(song, position) {
@@ -35,18 +63,10 @@ function queueEmbed(song, position) {
     .setThumbnail(`https://img.youtube.com/vi/${extractID(song.url)}/hqdefault.jpg`)
     .addFields(
       { name: '⏱️ Duración', value: song.duration || '??:??', inline: true },
-      { name: '🎧 Pedido por', value: song.requestedBy || 'Desconocido', inline: true }
+      { name: '🎧 Pedido por', value: formatRequester(song.requestedBy), inline: true }
     )
     .setFooter({ text: 'LEGADO MUSIC' });
 }
-
-function extractID(url) {
-  const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
-  return match ? match[1] : '';
-}
-
-const nodePath = process.execPath;
-const MAX_HISTORY = 50;
 
 class GuildQueue {
   constructor(voiceChannel, textChannel, connection) {
@@ -61,6 +81,7 @@ class GuildQueue {
     this.history = [];
     this.relatedPool = [];
     this.destroyed = false;
+    this.nowPlayingMsg = null; // mensaje interactivo actual
     this.player = createAudioPlayer();
     this.ytdlpProc = null;
     this.ffmpegProc = null;
@@ -71,7 +92,6 @@ class GuildQueue {
 
     connection.subscribe(this.player);
 
-    // Manejar desconexión sin crash
     connection.on(VoiceConnectionStatus.Destroyed, () => {
       this.destroyed = true;
       this._killProcesses();
@@ -80,6 +100,9 @@ class GuildQueue {
 
     this.player.on(AudioPlayerStatus.Idle, async () => {
       if (this.destroyed) return;
+
+      // Deshabilitar botones del mensaje anterior
+      this._disableNowPlayingButtons();
 
       if (this.loop && this.songs.length > 0) {
         this._play(this.songs[0]);
@@ -112,6 +135,7 @@ class GuildQueue {
 
     this.player.on('error', (err) => {
       console.error('Player error:', err.message);
+      this._disableNowPlayingButtons();
       this._killProcesses();
       this._cancelPrefetch();
       this.songs.shift();
@@ -119,11 +143,23 @@ class GuildQueue {
     });
   }
 
+  async _disableNowPlayingButtons() {
+    if (!this.nowPlayingMsg) return;
+    try {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId('btn_skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId('btn_stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger).setDisabled(true),
+        new ButtonBuilder().setCustomId('btn_loop').setEmoji('🔁').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId('btn_autoplay').setEmoji('🔀').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      );
+      await this.nowPlayingMsg.edit({ components: [row] });
+    } catch {}
+    this.nowPlayingMsg = null;
+  }
+
   _spawnYtdlp(url) {
-    console.log(`▶️ yt-dlp iniciando: ${url}`);
-    console.log(`   Node path: ${nodePath}`);
-    const cookiesPath = require('path').join(process.cwd(), 'cookies.txt');
-    const fs = require('fs');
+    console.log(`▶️ yt-dlp: ${url}`);
     const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
     return spawn('yt-dlp', [
       ...cookiesArgs,
@@ -159,13 +195,11 @@ class GuildQueue {
       try {
         const ffmpeg = this._spawnFfmpeg();
         const ytdlp = this._spawnYtdlp(nextSong.url);
-
         ytdlp.stdout.pipe(ffmpeg.stdin, { end: true });
         ytdlp.stdout.on('error', () => {});
-        ytdlp.stderr.on('data', (d) => console.error('yt-dlp prefetch err:', d.toString().trim()));
+        ytdlp.stderr.on('data', d => console.error('yt-dlp prefetch:', d.toString().trim()));
         ffmpeg.stdin.on('error', () => {});
         ffmpeg.stdout.on('error', () => {});
-
         this.nextYtdlp = ytdlp;
         this.nextFfmpeg = ffmpeg;
         this.prefetchSong = nextSong;
@@ -188,14 +222,14 @@ class GuildQueue {
       this._killProcesses();
       const ffmpeg = this.nextFfmpeg;
       const ytdlp = this.nextYtdlp;
-      this.nextFfmpeg = null;
-      this.nextYtdlp = null;
-      this.prefetchSong = null;
-      this.ytdlpProc = ytdlp;
-      this.ffmpegProc = ffmpeg;
+      this.nextFfmpeg = null; this.nextYtdlp = null; this.prefetchSong = null;
+      this.ytdlpProc = ytdlp; this.ffmpegProc = ffmpeg;
       const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
       this.player.play(resource);
-      this.textChannel.send({ embeds: [nowPlayingEmbed(song, this.autoplay)] });
+      this.nowPlayingMsg = await this.textChannel.send({
+        embeds: [nowPlayingEmbed(song, this)],
+        components: [nowPlayingButtons(this)],
+      });
       this._prefetchNext();
     } else {
       await this._play(song);
@@ -250,6 +284,7 @@ class GuildQueue {
   async addSong(song, silent = false) {
     const position = this.songs.length;
     this.songs.push(song);
+
     if (!this.playing) {
       this.playing = true;
       await this._play(this.songs[0]);
@@ -265,26 +300,27 @@ class GuildQueue {
     try {
       const ffmpeg = this._spawnFfmpeg();
       const ytdlp = this._spawnYtdlp(song.url);
-
-      this.ytdlpProc = ytdlp;
-      this.ffmpegProc = ffmpeg;
+      this.ytdlpProc = ytdlp; this.ffmpegProc = ffmpeg;
 
       ytdlp.stdout.pipe(ffmpeg.stdin, { end: true });
       ytdlp.stdout.on('error', () => {});
-      ytdlp.stderr.on('data', (d) => console.error('yt-dlp err:', d.toString().trim()));
+      ytdlp.stderr.on('data', d => console.error('yt-dlp err:', d.toString().trim()));
       ffmpeg.stdin.on('error', () => {});
       ffmpeg.stdout.on('error', () => {});
 
-      ytdlp.on('exit', (code) => {
-        if (code !== 0 && code !== null) console.error(`yt-dlp salió con código ${code} para ${song.url}`);
-        else console.log(`yt-dlp completado OK para: ${song.title}`);
+      ytdlp.on('exit', code => {
+        if (code !== 0 && code !== null) console.error(`yt-dlp salió con código ${code}`);
       });
 
       const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
       this.player.play(resource);
-      this.textChannel.send({ embeds: [nowPlayingEmbed(song, this.autoplay)] });
-      this._prefetchNext();
 
+      this.nowPlayingMsg = await this.textChannel.send({
+        embeds: [nowPlayingEmbed(song, this)],
+        components: [nowPlayingButtons(this)],
+      });
+
+      this._prefetchNext();
     } catch (err) {
       console.error('Error al reproducir:', err.message);
       this.textChannel.send({
@@ -303,6 +339,7 @@ class GuildQueue {
   stop() {
     this._cancelPrefetch();
     this._killProcesses();
+    this._disableNowPlayingButtons();
     this.songs = [];
     this.loop = false;
     this.autoplay = false;
