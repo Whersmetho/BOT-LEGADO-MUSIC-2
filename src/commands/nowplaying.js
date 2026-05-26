@@ -20,9 +20,10 @@ module.exports = {
     const queue = client.queues.get(queueKey);
     const song = queue?.getNowPlaying();
 
-    if (!song) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay nada reproduciéndose.')] });
-    }
+    if (!song) return;
+
+    const userChannel = message.member.voice.channel;
+    if (!userChannel || userChannel.id !== queue.voiceChannel.id) return;
 
     message.reply({
       embeds: [

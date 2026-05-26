@@ -6,9 +6,10 @@ module.exports = {
   description: 'Detiene la música y limpia la cola (solo DJ/Admin)',
   async execute(message, args, client) {
     const queue = client.queues.get(`${message.guild.id}-${client.user.id}`);
-    if (!queue) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No hay música en cola.')] });
-    }
+    if (!queue) return;
+
+    const userChannel = message.member.voice.channel;
+    if (!userChannel || userChannel.id !== queue.voiceChannel.id) return;
 
     const { allowed, reason } = canStop(message.member, queue);
     if (!allowed) {

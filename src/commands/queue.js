@@ -72,9 +72,10 @@ module.exports = {
     const queueKey = `${message.guild.id}-${client.user.id}`;
     const queue = client.queues.get(queueKey);
 
-    if (!queue || queue.songs.length === 0) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('📭 **La cola está vacía.**')] });
-    }
+    if (!queue || queue.songs.length === 0) return;
+
+    const userChannel = message.member.voice.channel;
+    if (!userChannel || userChannel.id !== queue.voiceChannel.id) return;
 
     let page = 0;
     const { embed, totalPages, safePage } = buildQueueEmbed(queue, page);
@@ -84,7 +85,6 @@ module.exports = {
 
     if (totalPages <= 1) return;
 
-    // Colector de botones de paginación
     const collector = reply.createMessageComponentCollector({ time: 60000 });
 
     collector.on('collect', async (i) => {
