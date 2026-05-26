@@ -32,7 +32,9 @@ module.exports = {
       return message.reply('❌ No tengo permisos para unirme o hablar en ese canal.');
     }
 
-    if (!(await hasPriorityToPlay(message, client))) return;
+    const canPlay = await hasPriorityToPlay(message, client);
+
+if (!canPlay) return;
 
     const query = args.join(' ');
     const loadingMsg = await message.reply('🔍 Buscando...');
