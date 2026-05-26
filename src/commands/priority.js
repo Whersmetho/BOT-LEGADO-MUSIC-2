@@ -23,7 +23,19 @@ function hasPriorityToControl(client, guildId) {
   return !!queue;
 }
 
+// ESTA FUNCIÓN FALTABA
+function hasPriorityToPlay(client, guild) {
+  const queueKey = `${guild.id}-${client.user.id}`;
+
+  const queue = client.queues.get(queueKey);
+
+  if (!queue) return true;
+
+  return true;
+}
+
 module.exports = {
   isBotActiveInGuild,
   hasPriorityToControl,
+  hasPriorityToPlay,
 };
