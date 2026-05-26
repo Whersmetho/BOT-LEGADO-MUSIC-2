@@ -58,7 +58,19 @@ if (existingBots.size > 0) {
     // Crear queue si no existe
     if (!queue) {
 
-      const connection = joinVoiceChannel({
+      const connection = 
+    // BOT 2 anti doble conexión
+    await new Promise(r => setTimeout(r, 1500));
+
+    const otherMusicBots = voiceChannel.members.filter(
+      m => m.user.bot && m.id !== client.user.id
+    );
+
+    if (otherMusicBots.size > 0) {
+      return;
+    }
+
+joinVoiceChannel({
         channelId: voiceChannel.id,
         guildId: message.guild.id,
         adapterCreator: message.guild.voiceAdapterCreator,
