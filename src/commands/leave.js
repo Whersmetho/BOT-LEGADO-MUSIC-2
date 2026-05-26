@@ -1,33 +1,64 @@
 const { EmbedBuilder } = require('discord.js');
-const { canStop } = require('../permissions');
+const { canControl } = require('../permissions');
+const { isBotActiveInGuild } = require('./priority');
 
 module.exports = {
   name: 'leave',
   aliases: ['dc', 'disconnect'],
-  description: 'Desconecta el bot del canal de voz',
+  description: 'Desconecta el bot y limpia la cola',
+
   async execute(message, args, client) {
-    const queue = client.queues.get(`${message.guild.id}-${client.user.id}`);
+    const queueKey = `${message.guild.id}-${client.user.id}`;
 
-    if (queue) {
-      const { allowed, reason } = canStop(message.member, queue);
-      if (!allowed) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription(reason)] });
-      }
-      try { queue.destroy(); } catch {}
-      client.queues.delete(`${message.guild.id}-${client.user.id}`);
+    // Prioridad
+    if (!isBotActiveInGuild(client, message.guild)) return;
+
+    const queue = client.queues.get(queueKey);
+
+    if (!queue) {
       return message.reply({
-        embeds: [new EmbedBuilder().setColor('#95A5A6').setDescription('👋 **Desconectado y cola limpiada.**').setFooter({ text: 'LEGADO MUSIC' })]
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#E74C3C')
+            .setDescription('❌ No hay una cola activa.')
+        ]
       });
     }
 
-    const voiceState = message.guild.members.cache.get(client.user.id)?.voice;
-    if (voiceState?.channel) {
-      try { voiceState.disconnect(); } catch {}
+    const { allowed, reason } = canControl(
+      message.member,
+      queue,
+      'l!dc'
+    );
+
+    if (!allowed) {
       return message.reply({
-        embeds: [new EmbedBuilder().setColor('#95A5A6').setDescription('👋 **Desconectado del canal de voz.**').setFooter({ text: 'LEGADO MUSIC' })]
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#E74C3C')
+            .setDescription(reason)
+        ]
       });
     }
 
-    message.reply({ embeds: [new EmbedBuilder().setColor('#E74C3C').setDescription('❌ No estoy en ningún canal de voz.')] });
+    // Limpiar cola
+    queue.songs = [];
+    queue.playing = false;
+
+    // Destruir conexión
+    if (queue.connection) {
+      queue.connection.destroy();
+    }
+
+    // Eliminar queue del bot actual
+    client.queues.delete(queueKey);
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor('#2ECC71')
+          .setDescription('👋 Bot desconectado correctamente.')
+      ]
+    });
   },
 };
