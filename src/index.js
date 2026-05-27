@@ -1,18 +1,18 @@
 require('dotenv').config();
- 
+
 const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { initSpotify } = require('./spotify');
 const { handleMessage: automodHandle } = require('./automod');
- 
+
 const token               = process.env.TOKEN?.trim();
 const spotifyClientId     = process.env.SPOTIFY_CLIENT_ID;
 const spotifyClientSecret = process.env.SPOTIFY_CLIENT_SECRET;
- 
+
 if (!token) { console.error('❌ TOKEN no encontrado'); process.exit(1); }
- 
+
 // ── Actualizar yt-dlp ────────────────────────────────────────────────────────
 try {
   console.log('🔄 Actualizando yt-dlp...');
@@ -22,11 +22,39 @@ try {
 } catch (e) {
   console.warn('⚠️ No se pudo actualizar yt-dlp:', e.message);
 }
- 
+
+// ── Arrancar servidor PO Token (evita bloqueos de YouTube en servidores) ─────
+const potProviderPath = path.join(__dirname, '..', 'node_modules/bgutil-yt-dlp-pot-provider/build/server.js');
+if (fs.existsSync(potProviderPath)) {
+  try {
+    const { spawn: spawnProc } = require('child_process');
+    const potServer = spawnProc(process.execPath, [potProviderPath, '--port', '4416'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    });
+    potServer.stdout.on('data', d => {
+      const msg = d.toString().trim();
+      if (msg) console.log(`[POT] ${msg}`);
+    });
+    potServer.stderr.on('data', d => {
+      const msg = d.toString().trim();
+      if (msg) console.log(`[POT] ${msg}`);
+    });
+    potServer.on('exit', code => console.warn(`[POT] Servidor terminó con código ${code}`));
+    // Dar tiempo al servidor para arrancar
+    execSync('sleep 2');
+    console.log('🔑 Servidor PO Token iniciado en puerto 4416');
+  } catch (e) {
+    console.warn('⚠️ No se pudo iniciar servidor PO Token:', e.message);
+  }
+} else {
+  console.warn('⚠️ bgutil-yt-dlp-pot-provider no encontrado');
+}
+
 // ── Escribir cookies desde variable de entorno ───────────────────────────────
 const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 const cookiesEnv  = process.env.YOUTUBE_COOKIES;
- 
+
 if (cookiesEnv) {
   try {
     // Railway a veces serializa los saltos de línea como \n literal
@@ -41,7 +69,7 @@ if (cookiesEnv) {
   console.warn('⚠️ YOUTUBE_COOKIES no definida — YouTube puede bloquear las descargas');
 }
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -51,11 +79,11 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
   ],
 });
- 
+
 client.commands = new Collection();
 client.aliases  = new Collection();
 client.queues   = new Map();
- 
+
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
@@ -65,7 +93,7 @@ for (const file of commandFiles) {
     for (const alias of command.aliases) client.aliases.set(alias, command.name);
   }
 }
- 
+
 client.once('clientReady', () => {
   console.log(`✅ Bot listo como ${client.user.tag}`);
   client.user.setActivity('🎵 l!help para comandos');
@@ -74,21 +102,21 @@ client.once('clientReady', () => {
     console.log('🟢 Spotify conectado');
   }
 });
- 
+
 // ── Botones interactivos ─────────────────────────────────────────────────────
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
- 
+
   const queueKey = `${interaction.guild.id}-${client.user.id}`;
   const queue    = client.queues.get(queueKey);
- 
+
   if (!queue) return interaction.reply({ content: '❌ No hay música reproduciéndose.', ephemeral: true });
- 
+
   const inVoice = interaction.member?.voice?.channel?.id === queue.voiceChannel.id;
   if (!inVoice) return interaction.reply({ content: '🎤 Debes estar en el canal de voz.', ephemeral: true });
- 
+
   await interaction.deferUpdate();
- 
+
   switch (interaction.customId) {
     case 'btn_pause':
       if (queue.player.state.status === 'playing') {
@@ -118,23 +146,23 @@ client.on('interactionCreate', async (interaction) => {
       break;
   }
 });
- 
+
 // ── Mensajes ─────────────────────────────────────────────────────────────────
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
- 
+
   await automodHandle(message, client);
- 
+
   if (!message.guild) return;
   const prefix = 'l!';
   if (!message.content.toLowerCase().startsWith(prefix)) return;
- 
+
   const args        = message.content.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
   const resolvedName = client.aliases.get(commandName) || commandName;
   const command      = client.commands.get(resolvedName);
   if (!command) return;
- 
+
   try {
     await command.execute(message, args, client);
   } catch (error) {
@@ -142,8 +170,7 @@ client.on('messageCreate', async (message) => {
     message.reply('❌ Ocurrió un error ejecutando ese comando.');
   }
 });
- 
+
 client.login(token)
   .then(() => console.log('🟢 Login exitoso'))
   .catch(err => console.error('❌ Error al iniciar sesión:', err));
- 
