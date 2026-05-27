@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { execSync, spawn } = require('child_process');
 const { initSpotify } = require('./spotify');
 const { handleMessage: automodHandle } = require('./automod');
 
@@ -11,6 +12,21 @@ const spotifyClientId = process.env.SPOTIFY_CLIENT_ID;
 const spotifyClientSecret = process.env.SPOTIFY_CLIENT_SECRET;
 
 if (!token) { console.error('❌ TOKEN no encontrado'); process.exit(1); }
+
+// ── Auto-actualizar yt-dlp al arrancar ──────────────────────────────────────
+function updateYtDlp() {
+  try {
+    console.log('🔄 Actualizando yt-dlp...');
+    const result = execSync('yt-dlp -U 2>&1', { timeout: 30000 }).toString();
+    const version = execSync('yt-dlp --version 2>&1').toString().trim();
+    console.log(`✅ yt-dlp listo — versión ${version}`);
+  } catch (err) {
+    console.warn('⚠️ No se pudo actualizar yt-dlp:', err.message);
+    // No detener el bot si falla la actualización
+  }
+}
+updateYtDlp();
+// ────────────────────────────────────────────────────────────────────────────
 
 const client = new Client({
   intents: [
@@ -56,7 +72,6 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.reply({ content: '❌ No hay música reproduciéndose.', ephemeral: true });
   }
 
-  // Verificar que el usuario esté en el canal de voz
   const member = interaction.member;
   const inVoice = member?.voice?.channel?.id === queue.voiceChannel.id;
   if (!inVoice) {
@@ -95,7 +110,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// ── Mensajes ────────────────────────────────────────────────────────────────
+// ── Mensajes ─────────────────────────────────────────────────────────────────
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
