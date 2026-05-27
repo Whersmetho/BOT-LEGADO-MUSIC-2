@@ -12,8 +12,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Instalar bgutil-yt-dlp-pot-provider (genera PO tokens automáticamente)
-RUN npm install bgutil-yt-dlp-pot-provider
+# Instalar bgutil-ytdlp-pot-provider (genera PO tokens automáticamente)
+RUN npm install bgutil-ytdlp-pot-provider
 
 COPY . .
 

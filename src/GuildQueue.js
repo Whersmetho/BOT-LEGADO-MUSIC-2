@@ -217,8 +217,8 @@ class GuildQueue {
 
     const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
 
-    // Ruta al servidor de PO Token (bgutil-yt-dlp-pot-provider)
-    const potProviderPath = path.join(process.cwd(), 'node_modules/bgutil-yt-dlp-pot-provider/build/server.js');
+    // Ruta al servidor de PO Token (bgutil-ytdlp-pot-provider)
+    const potProviderPath = path.join(process.cwd(), 'node_modules/bgutil-ytdlp-pot-provider/build/server.js');
     const potArgs = fs.existsSync(potProviderPath)
       ? ['--extractor-args', `youtube:pot_provider=bgutil;pot_server_host=127.0.0.1;pot_server_port=4416`]
       : [];

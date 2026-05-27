@@ -24,7 +24,7 @@ try {
 }
 
 // ── Arrancar servidor PO Token (evita bloqueos de YouTube en servidores) ─────
-const potProviderPath = path.join(__dirname, '..', 'node_modules/bgutil-yt-dlp-pot-provider/build/server.js');
+const potProviderPath = path.join(__dirname, '..', 'node_modules/bgutil-ytdlp-pot-provider/build/server.js');
 if (fs.existsSync(potProviderPath)) {
   try {
     const { spawn: spawnProc } = require('child_process');
@@ -48,7 +48,7 @@ if (fs.existsSync(potProviderPath)) {
     console.warn('⚠️ No se pudo iniciar servidor PO Token:', e.message);
   }
 } else {
-  console.warn('⚠️ bgutil-yt-dlp-pot-provider no encontrado');
+  console.warn('⚠️ bgutil-ytdlp-pot-provider no encontrado');
 }
 
 // ── Escribir cookies desde variable de entorno ───────────────────────────────
