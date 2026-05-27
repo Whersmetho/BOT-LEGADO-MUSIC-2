@@ -18,7 +18,7 @@ const nodePath = process.execPath;
 const MAX_HISTORY = 50;
 
 function extractID(url) {
-  const match = url?.match(/(?:v=|youtu\\.be\\/|shorts\\/)([A-Za-z0-9_-]{11})/);
+  const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : '';
 }
 
