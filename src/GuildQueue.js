@@ -214,6 +214,17 @@ class GuildQueue {
  
   _spawnYtdlp(url) {
     console.log(`▶️ yt-dlp: ${url}`);
+ 
+    // Escribir cookies desde variable de entorno si existe
+    if (process.env.YOUTUBE_COOKIES && !fs.existsSync(cookiesPath)) {
+      try {
+        fs.writeFileSync(cookiesPath, process.env.YOUTUBE_COOKIES, 'utf8');
+        console.log('🍪 Cookies de YouTube escritas en disco');
+      } catch (e) {
+        console.warn('⚠️ No se pudieron escribir las cookies:', e.message);
+      }
+    }
+ 
     const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
     return spawn('yt-dlp', [
       ...cookiesArgs,
@@ -454,3 +465,4 @@ function waitForData(stream, timeout = 15000) {
     stream.once('end',   onEnd);
   });
 }
+ 
