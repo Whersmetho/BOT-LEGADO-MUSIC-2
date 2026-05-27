@@ -12,22 +12,22 @@ const { getRelatedVideos } = require('./autoplay');
 const ffmpegPath = require('ffmpeg-static');
 const path = require('path');
 const fs = require('fs');
-
+ 
 const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 const nodePath = process.execPath;
 const MAX_HISTORY = 50;
-
+ 
 function extractID(url) {
   const match = url?.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : '';
 }
-
+ 
 function formatRequester(requestedBy) {
   if (!requestedBy) return 'Desconocido';
   if (typeof requestedBy === 'string') return requestedBy;
   return `<@${requestedBy.id}>`;
 }
-
+ 
 function nowPlayingEmbed(song, queue) {
   return new EmbedBuilder()
     .setColor('#9B59B6')
@@ -43,7 +43,7 @@ function nowPlayingEmbed(song, queue) {
     .setFooter({ text: `LEGADO MUSIC • ${queue.songs.length > 1 ? `${queue.songs.length - 1} en cola` : 'Cola vacía'}` })
     .setTimestamp();
 }
-
+ 
 function nowPlayingButtons(queue) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_pause').setEmoji('⏸️').setStyle(ButtonStyle.Secondary),
@@ -53,7 +53,7 @@ function nowPlayingButtons(queue) {
     new ButtonBuilder().setCustomId('btn_autoplay').setEmoji('🔀').setStyle(queue.autoplay ? ButtonStyle.Primary : ButtonStyle.Secondary),
   );
 }
-
+ 
 function queueEmbed(song, position) {
   return new EmbedBuilder()
     .setColor('#3498DB')
@@ -67,7 +67,7 @@ function queueEmbed(song, position) {
     )
     .setFooter({ text: 'LEGADO MUSIC' });
 }
-
+ 
 // Espera a que el stream de ffmpeg tenga datos reales antes de dárselo al player
 function waitForData(stream, timeout = 10000) {
   return new Promise((resolve, reject) => {
@@ -81,7 +81,7 @@ function waitForData(stream, timeout = 10000) {
     stream.once('end',   ()    => { clearTimeout(timer); reject(new Error('Stream terminó sin datos')); });
   });
 }
-
+ 
 class GuildQueue {
   constructor(voiceChannel, textChannel, connection) {
     this.voiceChannel = voiceChannel;
@@ -102,20 +102,20 @@ class GuildQueue {
     this.nextFfmpeg   = null;
     this.prefetchSong = null;
     this.prefetchTimeout = null;
-
+ 
     // Behavior: pausar en vez de destruirse si no hay suscriptores
     this.player = createAudioPlayer({
       behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
     });
-
+ 
     connection.subscribe(this.player);
-
+ 
     connection.on(VoiceConnectionStatus.Destroyed, () => {
       this.destroyed = true;
       this._killProcesses();
       this._cancelPrefetch();
     });
-
+ 
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
       await new Promise(r => setTimeout(r, 2000));
       if (this.destroyed) return;
@@ -124,14 +124,14 @@ class GuildQueue {
         VoiceConnectionStatus.Connecting,
         VoiceConnectionStatus.Signalling,
       ].includes(connection.state.status)) return;
-
+ 
       this.destroyed = true;
       this._killProcesses();
       this._cancelPrefetch();
       this._disableNowPlayingButtons();
       this.songs   = [];
       this.playing = false;
-
+ 
       try {
         this.textChannel.send({ embeds: [
           new EmbedBuilder()
@@ -142,24 +142,24 @@ class GuildQueue {
       } catch {}
       try { connection.destroy(); } catch {}
     });
-
+ 
     this.player.on(AudioPlayerStatus.Idle, async () => {
       if (this.destroyed) return;
-
+ 
       this._disableNowPlayingButtons();
-
+ 
       if (this.loop && this.songs.length > 0) {
         this._play(this.songs[0]);
         return;
       }
-
+ 
       const finished = this.songs.shift();
       if (finished) {
         this.lastSong = finished;
         this.history.push(finished.url);
         if (this.history.length > MAX_HISTORY) this.history.shift();
       }
-
+ 
       if (this.songs.length > 0) {
         await this._playWithPrefetch();
       } else if (this.autoplay && this.lastSong) {
@@ -180,7 +180,7 @@ class GuildQueue {
         }, 30000);
       }
     });
-
+ 
     this.player.on('error', (err) => {
       console.error('Player error:', err.message);
       this._disableNowPlayingButtons();
@@ -196,7 +196,7 @@ class GuildQueue {
       }
     });
   }
-
+ 
   async _disableNowPlayingButtons() {
     if (!this.nowPlayingMsg) return;
     try {
@@ -211,22 +211,24 @@ class GuildQueue {
     } catch {}
     this.nowPlayingMsg = null;
   }
-
+ 
   _spawnYtdlp(url) {
     console.log(`▶️ yt-dlp: ${url}`);
     const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
     return spawn('yt-dlp', [
       ...cookiesArgs,
-      '--js-runtimes', `node:${nodePath}`,
-      '-f', 'bestaudio/best',
+      '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+      '--audio-quality', '0',
       '-o', '-',
       '--no-playlist',
       '--quiet',
       '--no-warnings',
+      '--extractor-retries', '3',
+      '--no-check-certificates',
       url,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
-
+ 
   _spawnFfmpeg() {
     return spawn(ffmpegPath, [
       '-i', 'pipe:0',
@@ -238,13 +240,13 @@ class GuildQueue {
       'pipe:1',
     ], { stdio: ['pipe', 'pipe', 'ignore'] });
   }
-
+ 
   _prefetchNext() {
     if (this.songs.length < 2) return;
     const nextSong = this.songs[1];
     if (!nextSong) return;
     this._cancelPrefetch();
-
+ 
     this.prefetchTimeout = setTimeout(() => {
       try {
         const ffmpeg = this._spawnFfmpeg();
@@ -262,14 +264,14 @@ class GuildQueue {
       }
     }, 3000);
   }
-
+ 
   _cancelPrefetch() {
     if (this.prefetchTimeout) { clearTimeout(this.prefetchTimeout); this.prefetchTimeout = null; }
     try { if (this.nextFfmpeg) { this.nextFfmpeg.kill('SIGKILL'); this.nextFfmpeg = null; } } catch {}
     try { if (this.nextYtdlp)  { this.nextYtdlp.kill('SIGKILL');  this.nextYtdlp  = null; } } catch {}
     this.prefetchSong = null;
   }
-
+ 
   async _playWithPrefetch() {
     const song = this.songs[0];
     if (this.nextFfmpeg && this.nextYtdlp && this.prefetchSong?.url === song.url) {
@@ -278,7 +280,7 @@ class GuildQueue {
       const ytdlp  = this.nextYtdlp;
       this.nextFfmpeg = null; this.nextYtdlp = null; this.prefetchSong = null;
       this.ytdlpProc = ytdlp; this.ffmpegProc = ffmpeg;
-
+ 
       const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
       this.player.play(resource);
       this.nowPlayingMsg = await this.textChannel.send({
@@ -290,24 +292,24 @@ class GuildQueue {
       await this._play(song);
     }
   }
-
+ 
   async _playRelated() {
     try {
       this.textChannel.send({ embeds: [
         new EmbedBuilder().setColor('#9B59B6').setDescription('🔀 **Buscando canción relacionada...**')
       ]});
-
+ 
       if (this.relatedPool.length < 2) {
         const related = await getRelatedVideos(this.lastSong.url, this.lastSong.title, this.history);
         if (related.length > 0) this.relatedPool = related.sort(() => Math.random() - 0.5);
       }
-
+ 
       let song = null;
       while (this.relatedPool.length > 0) {
         const candidate = this.relatedPool.shift();
         if (!this.history.includes(candidate.url)) { song = candidate; break; }
       }
-
+ 
       if (!song) {
         this.playing = false;
         this.textChannel.send({ embeds: [
@@ -316,10 +318,10 @@ class GuildQueue {
         setTimeout(() => { if (!this.playing && !this.destroyed) { try { this.connection.destroy(); } catch {} } }, 30000);
         return;
       }
-
+ 
       this.songs.push(song);
       await this._play(song);
-
+ 
       if (this.relatedPool.length < 3) {
         getRelatedVideos(song.url, song.title, this.history).then(more => {
           this.relatedPool.push(...more.filter(v => !this.history.includes(v.url)).sort(() => Math.random() - 0.5));
@@ -330,16 +332,16 @@ class GuildQueue {
       this.playing = false;
     }
   }
-
+ 
   _killProcesses() {
     try { if (this.ffmpegProc) { this.ffmpegProc.kill('SIGKILL'); this.ffmpegProc = null; } } catch {}
     try { if (this.ytdlpProc)  { this.ytdlpProc.kill('SIGKILL');  this.ytdlpProc  = null; } } catch {}
   }
-
+ 
   async addSong(song, silent = false) {
     const position = this.songs.length;
     this.songs.push(song);
-
+ 
     if (!this.playing) {
       this.playing = true;
       await this._play(this.songs[0]);
@@ -349,7 +351,7 @@ class GuildQueue {
       if (position === 1) this._prefetchNext();
     }
   }
-
+ 
   async _play(song) {
     this._killProcesses();
     try {
@@ -357,29 +359,29 @@ class GuildQueue {
       const ytdlp  = this._spawnYtdlp(song.url);
       this.ytdlpProc  = ytdlp;
       this.ffmpegProc = ffmpeg;
-
+ 
       ytdlp.stdout.pipe(ffmpeg.stdin, { end: true });
       ytdlp.stdout.on('error', () => {});
       ytdlp.stderr.on('data', d => console.error('yt-dlp err:', d.toString().trim()));
       ffmpeg.stdin.on('error', () => {});
       ffmpeg.stdout.on('error', () => {});
-
+ 
       ytdlp.on('exit', code => {
         if (code !== 0 && code !== null) console.error(`yt-dlp salió con código ${code}`);
       });
-
+ 
       // ── FIX PRINCIPAL: esperar primer chunk antes de crear el resource ──
       await waitForData(ffmpeg.stdout);
       // ────────────────────────────────────────────────────────────────────
-
+ 
       const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
       this.player.play(resource);
-
+ 
       this.nowPlayingMsg = await this.textChannel.send({
         embeds: [nowPlayingEmbed(song, this)],
         components: [nowPlayingButtons(this)],
       });
-
+ 
       this._prefetchNext();
     } catch (err) {
       console.error('Error al reproducir:', err.message);
@@ -392,11 +394,11 @@ class GuildQueue {
       else this.playing = false;
     }
   }
-
+ 
   skip()   { this._cancelPrefetch(); this._killProcesses(); this.player.stop(); }
   pause()  { return this.player.pause(); }
   resume() { return this.player.unpause(); }
-
+ 
   stop() {
     this._cancelPrefetch();
     this._killProcesses();
@@ -409,21 +411,21 @@ class GuildQueue {
     this.player.stop();
     this.playing = false;
   }
-
+ 
   destroy() {
     this.destroyed = true;
     this.stop();
     try { this.connection.destroy(); } catch {}
   }
-
+ 
   toggleLoop()     { this.loop     = !this.loop;     return this.loop; }
   toggleAutoplay() { this.autoplay = !this.autoplay; return this.autoplay; }
   getNowPlaying()  { return this.songs[0] || null; }
   getQueue()       { return this.songs.slice(1); }
 }
-
+ 
 module.exports = GuildQueue;
-
+ 
 // Helper — espera el primer chunk del stream de ffmpeg
 function waitForData(stream, timeout = 15000) {
   return new Promise((resolve, reject) => {
@@ -431,7 +433,7 @@ function waitForData(stream, timeout = 15000) {
       cleanup();
       reject(new Error('Timeout: yt-dlp/ffmpeg no produjo audio'));
     }, timeout);
-
+ 
     function onData(chunk) {
       cleanup();
       // Devolver el chunk al stream para que el AudioResource lo consuma
@@ -446,7 +448,7 @@ function waitForData(stream, timeout = 15000) {
       stream.removeListener('error', onError);
       stream.removeListener('end',   onEnd);
     }
-
+ 
     stream.once('data',  onData);
     stream.once('error', onError);
     stream.once('end',   onEnd);
